@@ -1,0 +1,71 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'uri'
+require 'tempfile'
+require 'trollop'
+require 'enumerator'
+require "sup"
+
+Redwood::start
+index = Redwood::Index.init
+index.lock_interactively or exit
+
+begin
+  index.load
+
+  sources = Redwood::SourceManager.usual_sources.select { |s| s.is_a? Redwood::Maildir }
+
+  sources.each do |source|
+    $stderr.puts "Scanning #{source}..."
+
+    source.reset!
+    num_read = num_flagged = num_dropped = num_moved = num_scanned = 0
+
+    Redwood::PollManager.each_message_from source do |m|
+      num_scanned += 1
+
+      labels = m.labels
+
+      if labels.member? :deleted
+        num_dropped += 1
+        puts "Dropping deleted message #{source}##{m.source_info}"
+        #source.delete m.id
+      elsif labels.member? :spam
+        num_dropped += 1
+        puts "Dropping spam message #{source}##{m.source_info}"
+        #source.delete m.id
+      end
+
+      unless labels.member? :unread
+        unless source.seen? m.source_info
+          num_read += 1
+          puts "Marked message #{source}##{m.source_info} read"
+          #source.mark_seen m.source_info
+        end
+      end
+
+      if labels.member? :starred
+        unless source.flagged? m.source_info
+          num_flagged += 1
+          puts "Marked message #{source}##{m.source_info} starred"
+          #source.mark_flagged m.source_info
+        end
+      end
+
+    end
+
+    puts "#{num_scanned} messages scanned."
+    puts "#{num_dropped} messages dropped."
+    puts "#{num_read} messages marked read."
+    puts "#{num_flagged} messages flagged."
+  end
+
+
+rescue Exception => e
+  File.open("sup-exception-log.txt", "w") { |f| f.puts e.backtrace }
+  raise
+ensure
+  Redwood::finish
+  index.unlock
+end
