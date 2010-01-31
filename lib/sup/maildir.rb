@@ -33,7 +33,6 @@ module Redwood
       #these are used to determine whether scanning the directory for new mail
       #is a worthwhile effort
       @mtimes = { 'cur' => Time.at(0), 'new' => Time.at(0) }.merge(mtimes || {})
-      @dir_ids = { 'cur' => [], 'new' => [] }
     end
 
     def file_path; @dir end
@@ -41,10 +40,7 @@ module Redwood
     def is_source_for? uri; super || (URI(Source.expand_filesystem_uri(uri)) == URI(self.uri)); end
 
     def check
-      scan_mailbox
-      return unless start_offset
-
-      start = @ids.index(cur_offset || start_offset) or raise OutOfSyncSourceError, "Unknown message id #{cur_offset || start_offset}." # couldn't find the most recent email
+      raise FatalSourceError unless File.directory? @dir
     end
 
     def store_message date, from_email, &block
@@ -118,6 +114,8 @@ module Redwood
 
       debug "scanning maildir #@dir..."
       begin
+        @ids_to_fns = {}
+        @ids = []
         @mtimes.each_key do |d|
           subdir = File.join(@dir, d)
           raise FatalSourceError, "#{subdir} not a directory" unless File.directory? subdir
@@ -128,17 +126,15 @@ module Redwood
           #since startup)
           if @mtimes[d] < mtime || initial_poll
             @mtimes[d] = mtime
-            @dir_ids[d] = []
             Dir[File.join(subdir, '*')].map do |fn|
               id = make_id fn
-              @dir_ids[d] << id
               @ids_to_fns[id] = fn
+              @ids << id
             end
           else
             debug "no poll on #{d}.  mtime on indicates no new messages."
           end
         end
-        @ids = @dir_ids.values.flatten.uniq.sort!
       rescue SystemCallError, IOError => e
         raise FatalSourceError, "Problem scanning Maildir directories: #{e.message}."
       end
@@ -167,8 +163,11 @@ module Redwood
     end
 
     def end_offset
-      scan_mailbox :rescan => true
-      @ids.last + 1
+      new_maildir_basefn
+    end
+
+    def done?
+      @ids.empty? || @ids.index(cur_offset || start_offset) >= @ids.length - 1
     end
 
     def pct_done; 100.0 * (@ids.index(cur_offset) || 0).to_f / (@ids.length - 1).to_f; end
@@ -187,16 +186,32 @@ module Redwood
     def mark_seen msg; maildir_mark_file msg, "S" unless seen? msg; end
     def mark_trashed msg; maildir_mark_file msg, "T" unless trashed? msg; end
 
-    def filename_for_id id; @ids_to_fns[id] end
+    def delete msg
+      fn = id_to_fn msg
+      @ids.delete(msg)
+      @ids_to_fns.delete(msg)
+      File.unlink fn
+    end
 
     private
 
+    def filename_for_id id; id_to_fn(id) end
+
     def make_id fn
-      #doing this means 1 syscall instead of 2 (File.mtime, File.size).
-      #makes a noticeable difference on nfs.
-      stat = File.stat(fn)
-      # use 7 digits for the size. why 7? seems nice.
-      sprintf("%d%07d", stat.mtime, stat.size % 10000000).to_i
+      File.basename(fn).split(':')[0] unless fn.nil?
+    end
+
+    def id_to_fn id
+      if @ids_to_fns.has_key? id
+        @ids_to_fns[id]
+      else
+        @ids_to_fns[id] = find_id_to_fn id
+      end
+    end
+
+    def find_id_to_fn id
+      fns = Dir.glob(File.join(@dir,'cur',id)+'*')+Dir.glob(File.join(@dir,'new',id)+'*')
+      fns[0] unless fns.empty?
     end
 
     def new_maildir_basefn
@@ -205,23 +220,31 @@ module Redwood
     end
 
     def with_file_for id
-      fn = @ids_to_fns[id] or raise OutOfSyncSourceError, "No such id: #{id.inspect}."
+      fn = id_to_fn(id) or raise OutOfSyncSourceError, "No such id: #{id.inspect}."
       begin
-        File.open(fn, 'rb') { |f| yield f }
+        begin
+          File.open(fn, 'rb') { |f| yield f }
+        rescue SystemCallError, IOError => e
+          debug "ID lost FN: #{id}"
+          fn = find_id_to_fn id
+          @ids_to_fns[id] = fn
+          File.open(fn, 'rb') { |f| yield f }
+        end
       rescue SystemCallError, IOError => e
         raise FatalSourceError, "Problem reading file for id #{id.inspect}: #{fn.inspect}: #{e.message}."
       end
     end
 
     def maildir_data msg
-      fn = File.basename @ids_to_fns[msg]
+      fn = id_to_fn(msg) or raise OutOfSyncSourceError, "No such id: #{id.inspect}."
+      fn = File.basename fn
       fn =~ %r{^([^:]+):([12]),([DFPRST]*)$}
       [($1 || fn), ($2 || "2"), ($3 || "")]
     end
 
     ## not thread-safe on msg
     def maildir_mark_file msg, flag
-      orig_path = @ids_to_fns[msg]
+      orig_path = id_to_fn(msg)
       orig_base, orig_fn = File.split(orig_path)
       new_base = orig_base.slice(0..-4) + 'cur'
       tmp_base = orig_base.slice(0..-4) + 'tmp'
