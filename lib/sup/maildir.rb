@@ -172,6 +172,7 @@ module Redwood
 
     def pct_done; 100.0 * (@ids.index(cur_offset) || 0).to_f / (@ids.length - 1).to_f; end
 
+    def acked? msg; File.basename(File.dirname(id_to_fn(msg))) == 'cur'; end
     def draft? msg; maildir_data(msg)[2].include? "D"; end
     def flagged? msg; maildir_data(msg)[2].include? "F"; end
     def passed? msg; maildir_data(msg)[2].include? "P"; end
@@ -179,6 +180,7 @@ module Redwood
     def seen? msg; maildir_data(msg)[2].include? "S"; end
     def trashed? msg; maildir_data(msg)[2].include? "T"; end
 
+    def mark_acked msg; maildir_mark_file msg, '' unless acked? msg; end
     def mark_draft msg; maildir_mark_file msg, "D" unless draft? msg; end
     def mark_flagged msg; maildir_mark_file msg, "F" unless flagged? msg; end
     def mark_passed msg; maildir_mark_file msg, "P" unless passed? msg; end

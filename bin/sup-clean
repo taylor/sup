@@ -2,7 +2,6 @@
 
 require 'rubygems'
 require 'uri'
-require 'tempfile'
 require 'trollop'
 require 'enumerator'
 require "sup"
