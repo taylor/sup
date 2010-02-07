@@ -6,8 +6,59 @@ require 'trollop'
 require 'enumerator'
 require "sup"
 
+def sanitize_body body
+  body.gsub(/^From /, ">From ")
+end
+
+def mv msg, src, dst
+  begin
+    dst.store_message(msg.date, msg.from)  { |f| f.puts sanitize_body(msg.to_s) }
+    src.delete msg.source_info
+  rescue Exception => e
+    $stderr.puts "Lost message #{msg.source_info} because #{e.message}"
+  end
+end
+
+opts = Trollop::options do
+  version "sup-clean (sup #{Redwood::VERSION})"
+  banner <<EOS
+Drop or move messages from Sup sources that are marked as deleted or
+spam in the Sup index.
+
+Currently only works with maildir sources.
+
+Usage:
+  sup-clean [options] <source>*
+
+where <source>* is zero or more source URIs. If no sources are given,
+sync back all usual sources.
+
+You almost certainly want to run sup-sync --changed after this command.
+Running this does not change the index.
+
+Options include:
+EOS
+  opt :drop_deleted, "Drop deleted messages.", :default => false, :short => "d"
+  opt :move_deleted, "Move deleted messages to a local Maildir.", :type => String, :short => :none
+  opt :drop_spam, "Drop spam messages.", :default => false, :short => "s"
+  opt :move_spam, "Move spam messages to a local Maildir.", :type => String, :short => :none
+
+  opt :index, "Use this index type ('auto' for autodetect)", :default => "auto"
+  opt :verbose, "Print message ids as they're processed."
+  opt :dry_run, "Don't actually modify the index. Probably only useful with --verbose.", :short => "-n"
+  opt :version, "Show version information", :short => :none
+
+  conflicts :drop_deleted, :move_deleted
+  conflicts :drop_spam, :move_spam
+end
+
+unless opts[:drop_deleted] || opts[:move_deleted] || opts[:drop_spam] || opts[:move_spam]
+  puts "Nothing to do. Please specify at least one of --drop-deleted, --move-deleted, --drop-spam, or --move-spam."
+  exit
+end
+
 Redwood::start
-index = Redwood::Index.init
+index = Redwood::Index.init opts[:index]
 index.lock_interactively or exit
 
 begin
@@ -15,49 +66,66 @@ begin
 
   sources = Redwood::SourceManager.usual_sources.select { |s| s.is_a? Redwood::Maildir }
 
+  trash = Redwood::SourceManager.source_for(opts[:move_deleted]) if opts[:move_deleted]
+  spam = Redwood::SourceManager.source_for(opts[:move_spam]) if opts[:move_spam]
+
   sources.each do |source|
-    $stderr.puts "Scanning #{source}..."
+    $stderr.puts "Scanning #{source}..." if opts[:verbose]
 
     source.reset!
     num_read = num_flagged = num_dropped = num_moved = num_scanned = 0
 
     Redwood::PollManager.each_message_from source do |m|
       num_scanned += 1
-
-      labels = m.labels
+      message = index.build_message(m.id)
+      labels = message.labels
 
       if labels.member? :deleted
-        num_dropped += 1
-        puts "Dropping deleted message #{source}##{m.source_info}"
-        #source.delete m.id
+        if opts[:drop_deleted]
+          num_dropped += 1
+          puts "Dropping deleted message #{source}##{m.source_info}" if opts[:verbose]
+          source.delete m.source_info unless opts[:dry_run]
+        elsif opts[:move_deleted]
+          num_moved += 1
+          puts "Moving deleted message #{source}##{m.source_info} to Trash" if opts[:verbose]
+          mv m, source, trash unless opts[:dry_run]
+        end
       elsif labels.member? :spam
-        num_dropped += 1
-        puts "Dropping spam message #{source}##{m.source_info}"
-        #source.delete m.id
-      end
+        if opts[:drop_spam]
+          num_dropped += 1
+          puts "Dropping spam message #{source}##{m.source_info}" if opts[:verbose]
+          source.delete m.source_info unless opts[:dry_run]
+        elsif opts[:move_spam]
+          num_moved += 1
+          puts "Moving spam message #{source}##{m.source_info} to Junk" if opts[:verbose]
+          mv m, source, spam unless opts[:dry_run]
+        end
+      else
+        source.mark_acked m.source_info
 
-      unless labels.member? :unread
-        unless source.seen? m.source_info
-          num_read += 1
-          puts "Marked message #{source}##{m.source_info} read"
-          #source.mark_seen m.source_info
+        unless labels.member? :unread
+          unless source.seen? m.source_info
+            num_read += 1
+            puts "Marked message #{source}##{m.source_info} read" if opts[:verbose]
+            source.mark_seen m.source_info unless opts[:dry_run]
+          end
+        end
+
+        if labels.member? :starred
+          unless source.flagged? m.source_info
+            num_flagged += 1
+            puts "Marked message #{source}##{m.source_info} starred" if opts[:verbose]
+            source.mark_flagged m.source_info unless opts[:dry_run]
+          end
         end
       end
-
-      if labels.member? :starred
-        unless source.flagged? m.source_info
-          num_flagged += 1
-          puts "Marked message #{source}##{m.source_info} starred"
-          #source.mark_flagged m.source_info
-        end
-      end
-
     end
 
-    puts "#{num_scanned} messages scanned."
-    puts "#{num_dropped} messages dropped."
-    puts "#{num_read} messages marked read."
-    puts "#{num_flagged} messages flagged."
+    puts "#{num_scanned} messages scanned." if opts[:verbose]
+    puts "#{num_dropped} messages dropped." if opts[:verbose]
+    puts "#{num_moved} messages moved." if opts[:verbose]
+    puts "#{num_read} messages marked read." if opts[:verbose]
+    puts "#{num_flagged} messages flagged." if opts[:verbose]
   end
 
 

@@ -147,11 +147,7 @@ module Redwood
     def each
       scan_mailbox
       return unless start_offset
-
-      start = @ids.index(cur_offset || start_offset) or raise OutOfSyncSourceError, "Unknown message id #{cur_offset || start_offset}." # couldn't find the most recent email
-
-      start.upto(@ids.length - 1) do |i|
-        id = @ids[i]
+      @ids.each do |id|
         self.cur_offset = id
         yield id, @labels + (seen?(id) ? [] : [:unread]) + (trashed?(id) ? [:deleted] : []) + (flagged?(id) ? [:starred] : [])
       end
