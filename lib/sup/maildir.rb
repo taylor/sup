@@ -26,6 +26,8 @@ module Redwood
       @dir = uri.path
       @labels = Set.new(labels || [])
       @ids = []
+      @index_ids = []
+      @new_ids = []
       @ids_to_fns = {}
       @last_scan = nil
       @mutex = Mutex.new
@@ -116,6 +118,14 @@ module Redwood
       begin
         @ids_to_fns = {}
         @ids = []
+        @index_ids = []
+        @new_ids = []
+
+        puts "Finding messages sup knows about for source #@dir..."
+#        Index.each_id(:source_id => self.id) { |mid| m = Index.build_message(mid); @index_ids << m.source_info }
+        Index.each_id(:source_id => self.id) { |mid| e = Index.get_entry mid; @index_ids << e[:source_info] }
+        puts "Found #{@index_ids.length} messages for source #@dir"
+
         @mtimes.each_key do |d|
           subdir = File.join(@dir, d)
           raise FatalSourceError, "#{subdir} not a directory" unless File.directory? subdir
@@ -127,18 +137,21 @@ module Redwood
           if @mtimes[d] < mtime || initial_poll
             @mtimes[d] = mtime
             Dir[File.join(subdir, '*')].map do |fn|
-              id = make_id fn
-              @ids_to_fns[id] = fn
-              @ids << id
+              mid = make_id fn
+              @ids_to_fns[mid] = fn
+              @ids << mid
             end
           else
             debug "no poll on #{d}.  mtime on indicates no new messages."
           end
         end
+        @new_ids = @ids - @index_ids
+        @ids = @index_ids + @new_ids
       rescue SystemCallError, IOError => e
         raise FatalSourceError, "Problem scanning Maildir directories: #{e.message}."
       end
 
+      puts "Done scanning: Found #{@new_ids.length} new messages and #{@ids.length} messages for source #@dir"
       debug "done scanning maildir"
       @last_scan = Time.now
     end
@@ -147,9 +160,9 @@ module Redwood
     def each
       scan_mailbox
       return unless start_offset
-      @ids.each do |id|
-        self.cur_offset = id
-        yield id, @labels + (seen?(id) ? [] : [:unread]) + (trashed?(id) ? [:deleted] : []) + (flagged?(id) ? [:starred] : [])
+      @ids.each do |mid|
+        @cur_offset = mid
+        yield mid, @labels + (seen?(mid) ? [] : [:unread]) + (trashed?(mid) ? [:deleted] : []) + (flagged?(mid) ? [:starred] : [])
       end
     end
 
@@ -159,14 +172,19 @@ module Redwood
     end
 
     def end_offset
-      new_maildir_basefn
+      @ids.last
     end
 
     def done?
-      @ids.empty? || @ids.index(cur_offset || start_offset) >= @ids.length - 1
+      scan_mailbox if @ids.empty?
+      @ids.empty? || @ids.index(@cur_offset || start_offset) >= @ids.length - 1
     end
 
-    def pct_done; 100.0 * (@ids.index(cur_offset) || 0).to_f / (@ids.length - 1).to_f; end
+    def pct_done; 100.0 * (@ids.index(@cur_offset) || 0).to_f / (@ids.length - 1).to_f; end
+
+    def reset!
+      @cur_offset = start_offset
+    end
 
     def acked? msg; File.basename(File.dirname(id_to_fn(msg))) == 'cur'; end
     def draft? msg; maildir_data(msg)[2].include? "D"; end
