@@ -27,6 +27,7 @@ module Redwood
       @labels = Set.new(labels || [])
       @ids = []
       @index_ids = []
+      @index = 0
       @new_ids = []
       @ids_to_fns = {}
       @last_scan = nil
@@ -154,14 +155,17 @@ module Redwood
       puts "Done scanning: Found #{@new_ids.length} new messages and #{@ids.length} messages for source #@dir"
       debug "done scanning maildir"
       @last_scan = Time.now
+      @index = @ids.index(self.cur_offset) || 0
     end
     synchronized :scan_mailbox
 
     def each
       scan_mailbox
       return unless start_offset
+      @index = 0
       @ids.each do |mid|
         @cur_offset = mid
+        @index += 1
         yield mid, @labels + (seen?(mid) ? [] : [:unread]) + (trashed?(mid) ? [:deleted] : []) + (flagged?(mid) ? [:starred] : [])
       end
     end
@@ -176,14 +180,14 @@ module Redwood
     end
 
     def done?
-      scan_mailbox if @ids.empty?
-      @ids.empty? || @ids.index(@cur_offset || start_offset) >= @ids.length - 1
+      @ids.empty? || @index >= @ids.length
     end
 
-    def pct_done; 100.0 * (@ids.index(@cur_offset) || 0).to_f / (@ids.length - 1).to_f; end
+    def pct_done; 100.0 * (@index.to_f / @ids.length.to_f); end
 
     def reset!
       @cur_offset = start_offset
+      @index = 0
     end
 
     def acked? msg; File.basename(File.dirname(id_to_fn(msg))) == 'cur'; end
