@@ -226,6 +226,7 @@ module Redwood
           debug "ID lost FN: #{id}"
           fn = find_id_to_fn id
           @ids_to_fns[id] = fn
+          raise FatalSourceError, "Problem reading file for id #{id.inspect}: No longer in Source." if fn.nil?
           File.open(fn, 'rb') { |f| yield f }
         end
       rescue SystemCallError, IOError => e

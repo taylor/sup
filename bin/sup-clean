@@ -67,7 +67,15 @@ begin
   sources = Redwood::SourceManager.usual_sources.select { |s| s.is_a? Redwood::Maildir }
 
   trash = Redwood::SourceManager.source_for(opts[:move_deleted]) if opts[:move_deleted]
+  if trash.nil?
+    puts "Trash source does not exist"
+    exit
+  end
   spam = Redwood::SourceManager.source_for(opts[:move_spam]) if opts[:move_spam]
+  if spam.nil?
+    puts "Spam source does not exist"
+    exit
+  end
 
   sources.each do |source|
     $stderr.puts "Scanning #{source}..." if opts[:verbose]
