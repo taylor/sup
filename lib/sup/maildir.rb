@@ -166,7 +166,7 @@ module Redwood
       scan_mailbox
       return unless start_offset
       @ids.slice(@index..@ids.length).each do |mid|
-        puts "Scanning #{mid} at index #@index"
+        #puts "Scanning #{mid} at index #@index"
         self.cur_offset = mid
         @index += 1
         yield mid, @labels + (seen?(mid) ? [] : [:unread]) + (trashed?(mid) ? [:deleted] : []) + (flagged?(mid) ? [:starred] : [])
