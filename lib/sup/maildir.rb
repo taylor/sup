@@ -183,7 +183,7 @@ module Redwood
     end
 
     def done?
-      !@last_scan.nil? && @index >= @ids.length
+      !@last_scan.nil? && @index >= @ids.length - 1
     end
 
     def pct_done; 100.0 * (@index.to_f / @ids.length.to_f); end
