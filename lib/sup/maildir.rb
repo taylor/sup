@@ -124,7 +124,7 @@ module Redwood
 
         debug "Finding messages sup knows about for source #@dir..."
 
-        Index.each_id(:source_id => self.id) { |mid| e = Index.get_entry mid; @index_ids << e[:source_info] }
+        Index.each_id(:source_id => self.id, :load_spam => true, :load_deleted => true, :load_killed => true) { |mid| e = Index.get_entry mid; @index_ids << e[:source_info] }
 
         debug "Found #{@index_ids.length} messages for source #@dir"
 
