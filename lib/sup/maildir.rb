@@ -27,7 +27,7 @@ module Redwood
       @labels = Set.new(labels || [])
       @ids = []
       @index_ids = []
-      @index = 0
+      @cur_index = 0
       @new_ids = []
       @ids_to_fns = {}
       @last_scan = nil
@@ -147,28 +147,26 @@ module Redwood
             debug "no poll on #{d}.  mtime on indicates no new messages."
           end
         end
-        @new_ids = @ids - @index_ids
-        puts "Found #{@new_ids.length} messages in #{@dir}"
-        @ids = @index_ids + @new_ids
       rescue SystemCallError, IOError => e
         raise FatalSourceError, "Problem scanning Maildir directories: #{e.message}."
       end
 
+      @new_ids = @ids - @index_ids
+      @ids = @index_ids + @new_ids
       puts "Done scanning: Found #{@new_ids.length} new messages and #{@ids.length} messages for source #@dir"
       debug "done scanning maildir"
       @last_scan = Time.now
-      @index = @ids.index(self.cur_offset) || 0
-      puts "The current offset is #{self.cur_offset} at #@index with #{@new_ids.length} new messages"
+      @cur_index = @ids.index(self.cur_offset) || 0
+      puts "The current offset is #{self.cur_offset} at #@cur_index with #{@new_ids.length} new messages"
     end
     synchronized :scan_mailbox
 
     def each
       scan_mailbox
       return unless start_offset
-      @ids.slice(@index+1..@ids.length).each do |mid|
-        #puts "Scanning #{mid} at index #@index"
+      @ids.slice(@cur_index+1..@ids.length).each do |mid|
         self.cur_offset = mid
-        @index += 1
+        @cur_index += 1
         yield mid, @labels + (seen?(mid) ? [] : [:unread]) + (trashed?(mid) ? [:deleted] : []) + (flagged?(mid) ? [:starred] : [])
       end
     end
@@ -179,19 +177,20 @@ module Redwood
     end
 
     def end_offset
+      scan_mailbox
       @ids.last
     end
 
     def done?
-      !@last_scan.nil? && @index >= @ids.length - 1
+      !@last_scan.nil? && @cur_index >= @ids.length - 1
     end
 
-    def pct_done; 100.0 * (@index.to_f / @ids.length.to_f); end
+    def pct_done; 100.0 * (@cur_index.to_f / @ids.length.to_f); end
 
     def reset!
       puts "reset called"
       self.cur_offset = start_offset
-      @index = 0
+      @cur_index = 0
     end
 
     def acked? msg; File.basename(File.dirname(id_to_fn(msg))) == 'cur'; end
