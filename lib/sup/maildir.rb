@@ -147,6 +147,7 @@ module Redwood
           end
         end
         @new_ids = @ids - @index_ids
+        puts "Found #{@new_ids.length} messages in #{@dir}"
         @ids = @index_ids + @new_ids
       rescue SystemCallError, IOError => e
         raise FatalSourceError, "Problem scanning Maildir directories: #{e.message}."
@@ -180,7 +181,7 @@ module Redwood
     end
 
     def done?
-      @ids.empty? || @index >= @ids.length
+      !@last_scan.nil? && @ids.empty? && @index >= @ids.length
     end
 
     def pct_done; 100.0 * (@index.to_f / @ids.length.to_f); end
