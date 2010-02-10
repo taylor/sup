@@ -156,7 +156,9 @@ module Redwood
       puts "Done scanning: Found #{@new_ids.length} new messages and #{@ids.length} messages for source #@dir"
       debug "done scanning maildir"
       @last_scan = Time.now
-      @cur_index = @ids.index(self.cur_offset) || 0
+      # @cur_index = @ids.index(self.cur_offset) || 0
+      @cur_index = @index_ids.length
+      @cur_offset = @ids[@cur_index]
       puts "The current offset is #{self.cur_offset} at #@cur_index with #{@new_ids.length} new messages"
     end
     synchronized :scan_mailbox
