@@ -122,11 +122,11 @@ module Redwood
         @index_ids = []
         @new_ids = []
 
-        puts "Finding messages sup knows about for source #@dir..."
+        debug "Finding messages sup knows about for source #@dir..."
 
         Index.each_id(:source_id => self.id) { |mid| e = Index.get_entry mid; @index_ids << e[:source_info] }
 
-        puts "Found #{@index_ids.length} messages for source #@dir"
+        debug "Found #{@index_ids.length} messages for source #@dir"
 
         @mtimes.each_key do |d|
           subdir = File.join(@dir, d)
@@ -153,13 +153,13 @@ module Redwood
 
       @new_ids = @ids - @index_ids
       @ids = @index_ids + @new_ids
-      puts "Done scanning: Found #{@new_ids.length} new messages and #{@ids.length} messages for source #@dir"
+      debug "Done scanning: Found #{@new_ids.length} new messages and #{@ids.length} messages for source #@dir"
       debug "done scanning maildir"
       @last_scan = Time.now
       # @cur_index = @ids.index(self.cur_offset) || 0
       @cur_index = @index_ids.length
       @cur_offset = @ids[@cur_index]
-      puts "The current offset is #{self.cur_offset} at #@cur_index with #{@new_ids.length} new messages"
+      debug "The current offset is #{self.cur_offset} at #@cur_index with #{@new_ids.length} new messages"
     end
     synchronized :scan_mailbox
 
@@ -190,7 +190,7 @@ module Redwood
     def pct_done; 100.0 * (@cur_index.to_f / @ids.length.to_f); end
 
     def reset!
-      puts "reset called"
+      debug "reset called"
       self.cur_offset = start_offset
       @cur_index = 0
     end
