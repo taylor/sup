@@ -165,7 +165,7 @@ module Redwood
     def each
       scan_mailbox
       return unless start_offset
-      @ids.slice(@index..@ids.length).each do |mid|
+      @ids.slice(@index+1..@ids.length).each do |mid|
         #puts "Scanning #{mid} at index #@index"
         self.cur_offset = mid
         @index += 1
