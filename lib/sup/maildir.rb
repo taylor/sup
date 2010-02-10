@@ -123,8 +123,9 @@ module Redwood
         @new_ids = []
 
         puts "Finding messages sup knows about for source #@dir..."
-#        Index.each_id(:source_id => self.id) { |mid| m = Index.build_message(mid); @index_ids << m.source_info }
+
         Index.each_id(:source_id => self.id) { |mid| e = Index.get_entry mid; @index_ids << e[:source_info] }
+
         puts "Found #{@index_ids.length} messages for source #@dir"
 
         @mtimes.each_key do |d|
@@ -187,6 +188,7 @@ module Redwood
     def pct_done; 100.0 * (@index.to_f / @ids.length.to_f); end
 
     def reset!
+      puts "reset called"
       @cur_offset = start_offset
       @index = 0
     end

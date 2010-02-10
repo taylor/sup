@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 
+require 'ruby-prof'
 require 'uri'
 require 'rubygems'
 require 'trollop'
@@ -111,6 +112,8 @@ restored_state = if opts[:restore]
 else
   {}
 end
+
+RubyProf.start
 
 seen = {}
 index.lock_interactively or exit
@@ -271,3 +274,7 @@ ensure
   Redwood::finish
   index.unlock
 end
+
+result = RubyProf.stop
+printer = RubyProf::FlatPrinter.new(result)
+printer.print(STDOUT, 0)
