@@ -1,5 +1,6 @@
 require 'rmail'
 require 'uri'
+require 'find'
 
 module Redwood
 
@@ -25,6 +26,7 @@ module Redwood
 
       @dir = uri.path
       @labels = Set.new(labels || [])
+      @toc = []
       @ids = []
       @index_ids = []
       @cur_index = 0
@@ -48,7 +50,7 @@ module Redwood
 
     def store_message date, from_email, &block
       stored = false
-      new_fn = new_maildir_basefn + ':2,S'
+      new_fn = new_maildir_basefn + ':2'
       Dir.chdir(@dir) do |d|
         tmp_path = File.join(@dir, 'tmp', new_fn)
         new_path = File.join(@dir, 'new', new_fn)
@@ -124,9 +126,11 @@ module Redwood
 
         debug "Finding messages sup knows about for source #@dir..."
 
-        Index.each_id(:source_id => self.id, :load_spam => true, :load_deleted => true, :load_killed => true) { |mid| e = Index.get_entry mid; @index_ids << e[:source_info] }
+        @toc = []
 
-        debug "Found #{@index_ids.length} messages for source #@dir"
+        Find.find(@dir){|fn| fs = File.stat fn; mt = fs.mtime; id = File.basename(fn).split(':')[0]; entry = {:id => id, :mtime => mt, :filename => fn }; @toc << entry if fs.file?}
+
+        @toc.sort!{ |a,b| a[:mtime] <=> b[:mtime] }
 
         @mtimes.each_key do |d|
           subdir = File.join(@dir, d)
